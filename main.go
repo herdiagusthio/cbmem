@@ -20,6 +20,7 @@ import (
 	yamlidx "github.com/herdiagusthio/cbmem/internal/indexer/yaml"
 	dockeridx "github.com/herdiagusthio/cbmem/internal/indexer/docker"
 	protoidx "github.com/herdiagusthio/cbmem/internal/indexer/proto"
+	"github.com/herdiagusthio/cbmem/internal/artifacts"
 	"github.com/herdiagusthio/cbmem/internal/linker"
 	"github.com/herdiagusthio/cbmem/internal/storage"
 )
@@ -272,8 +273,10 @@ func indexCmd() *cobra.Command {
 			_ = store.SetMeta("indexed_edges", fmt.Sprintf("%d", edgeCount))
 			_ = store.SetMeta("indexed_files", fmt.Sprintf("%d", len(files)))
 
-			// minimal artifacts: map.md
+			// artifacts: map.md + routes.md + callgraph.dot
 			_ = writeMapMD(outputDir, repoName, files, count, edgeCount)
+			_ = artifacts.WriteRoutesMD(ctx, outputDir, repoName, store)
+			_ = artifacts.WriteCallgraphDOT(ctx, outputDir, repoName, store)
 
 			if jsonOutput {
 				b, _ := json.Marshal(map[string]any{"repo": repoName, "indexed_symbols": count, "indexed_edges": edgeCount, "indexed_files": len(files), "output_dir": outputDir})

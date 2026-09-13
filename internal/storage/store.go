@@ -235,6 +235,46 @@ func (s *Store) GetMeta(key string) (string, error) {
 	return value, err
 }
 
+func (s *Store) ListSymbols(ctx context.Context, repo string, limit int) ([]*Symbol, error) {
+	q := `SELECT id, repo, file_path, symbol_kind, name, qualified_name, signature, language, start_line, end_line, content_hash, ast_json, embedding FROM symbols WHERE repo=? ORDER BY file_path, start_line`
+	args := []any{repo}
+	if limit > 0 {
+		q += ` LIMIT ?`
+		args = append(args, limit)
+	}
+	rows, err := s.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*Symbol
+	for rows.Next() {
+		var sym Symbol
+		if err := rows.Scan(&sym.ID, &sym.Repo, &sym.FilePath, &sym.SymbolKind, &sym.Name, &sym.QualifiedName, &sym.Signature, &sym.Language, &sym.StartLine, &sym.EndLine, &sym.ContentHash, &sym.ASTJSON, &sym.Embedding); err != nil {
+			return nil, err
+		}
+		out = append(out, &sym)
+	}
+	return out, nil
+}
+
+func (s *Store) ListEdges(ctx context.Context, repo string) ([]EdgeWithNames, error) {
+	rows, err := s.QueryContext(ctx, `SELECT e.src_symbol_id, e.dst_symbol_id, e.edge_kind, e.confidence, s.qualified_name, t.qualified_name FROM edges e JOIN symbols s ON s.id=e.src_symbol_id JOIN symbols t ON t.id=e.dst_symbol_id WHERE s.repo=? AND t.repo=?`, repo, repo)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []EdgeWithNames
+	for rows.Next() {
+		var e EdgeWithNames
+		if err := rows.Scan(&e.SrcSymbolID, &e.DstSymbolID, &e.EdgeKind, &e.Confidence, &e.SrcQualified, &e.DstQualified); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, nil
+}
+
 type Symbol struct {
 	ID            int64
 	Repo          string
@@ -256,6 +296,12 @@ type Edge struct {
 	DstSymbolID int64
 	EdgeKind    string
 	Confidence  float64
+}
+
+type EdgeWithNames struct {
+	Edge
+	SrcQualified string
+	DstQualified string
 }
 
 type Link struct {
