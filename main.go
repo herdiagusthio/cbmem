@@ -273,10 +273,11 @@ func indexCmd() *cobra.Command {
 			_ = store.SetMeta("indexed_edges", fmt.Sprintf("%d", edgeCount))
 			_ = store.SetMeta("indexed_files", fmt.Sprintf("%d", len(files)))
 
-			// artifacts: map.md + routes.md + callgraph.dot
+			// artifacts: map.md + routes.md + callgraph.dot + notes.md
 			_ = writeMapMD(outputDir, repoName, files, count, edgeCount)
 			_ = artifacts.WriteRoutesMD(ctx, outputDir, repoName, store)
 			_ = artifacts.WriteCallgraphDOT(ctx, outputDir, repoName, store)
+			_ = artifacts.WriteNotesMD(ctx, outputDir, repoName, store)
 
 			if jsonOutput {
 				b, _ := json.Marshal(map[string]any{"repo": repoName, "indexed_symbols": count, "indexed_edges": edgeCount, "indexed_files": len(files), "output_dir": outputDir})
