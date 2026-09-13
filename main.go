@@ -14,6 +14,7 @@ import (
 	"github.com/herdiagusthio/cbmem/internal/git"
 	"github.com/herdiagusthio/cbmem/internal/indexer"
 	golang "github.com/herdiagusthio/cbmem/internal/indexer/golang"
+	"github.com/herdiagusthio/cbmem/internal/indexer/python"
 	"github.com/herdiagusthio/cbmem/internal/indexer/typescript"
 	"github.com/herdiagusthio/cbmem/internal/storage"
 )
@@ -176,7 +177,7 @@ func indexCmd() *cobra.Command {
 				}
 			}
 
-			disp := indexer.NewDispatcher(golang.New(), typescript.New())
+			disp := indexer.NewDispatcher(golang.New(), typescript.New(), python.New())
 			files, err := indexer.CollectFiles(indexer.WalkOpts{
 				RepoRoot:     abs,
 				ExcludePaths: cfg.ExcludePaths,
