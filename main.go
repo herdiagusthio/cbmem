@@ -20,6 +20,7 @@ import (
 	yamlidx "github.com/herdiagusthio/cbmem/internal/indexer/yaml"
 	dockeridx "github.com/herdiagusthio/cbmem/internal/indexer/docker"
 	protoidx "github.com/herdiagusthio/cbmem/internal/indexer/proto"
+	"github.com/herdiagusthio/cbmem/internal/linker"
 	"github.com/herdiagusthio/cbmem/internal/storage"
 )
 
@@ -45,6 +46,8 @@ func main() {
 	rootCmd.AddCommand(queryCmd())
 	rootCmd.AddCommand(callersCmd())
 	rootCmd.AddCommand(calleesCmd())
+	rootCmd.AddCommand(linksCmd())
+	rootCmd.AddCommand(staleCmd())
 	rootCmd.AddCommand(serveCmd())
 	rootCmd.AddCommand(versionCmd())
 
@@ -428,9 +431,112 @@ func versionCmd() *cobra.Command {
 		Use:   "version",
 		Short: "Print version",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println("cbmem v0.0.1-dev (Go+TS indexers, SQLite FTS5)")
+			fmt.Println("cbmem v0.1.0-dev (Go+TS+Python+SQL+YAML+Docker+Proto, SQLite FTS5, linker)")
 		},
 	}
+}
+
+func linksCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "links [repo-path]",
+		Short: "Build links.jsonl from // cbmem:link and ADR evidence:",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			repo := "."
+			if len(args) > 0 {
+				repo = args[0]
+			}
+			if repoPath != "" {
+				repo = repoPath
+			}
+			abs, _ := filepath.Abs(repo)
+			if r, err := git.GetRepoRoot(abs); err == nil {
+				abs = r
+			}
+			repoName := filepath.Base(abs)
+			if outputDir == "" {
+				outputDir = filepath.Join(os.Getenv("HOME"), "code-storage", "second-brain", "codebase", repoName)
+			}
+			_ = os.MkdirAll(outputDir, 0755)
+			store, _ := storage.NewStore(filepath.Join(outputDir, "symbols.db"))
+			if store != nil {
+				defer store.Close()
+				_ = store.Migrate()
+			}
+			ctx := context.Background()
+			codeLinks, _ := linker.ParseCodeLinks(abs)
+			// ADR links: second-brain root is parent of codebase output
+			sbRoot := filepath.Join(os.Getenv("HOME"), "code-storage", "second-brain")
+			adrLinks, _ := linker.ParseADRLinks(sbRoot)
+			// filter ADR links to this repo's symbols only (symbol contains repo hint or keep all for now)
+			all := append(codeLinks, adrLinks...)
+			if err := linker.WriteJSONL(ctx, outputDir, all, store, repoName); err != nil {
+				return err
+			}
+			if jsonOutput {
+				b, _ := json.Marshal(map[string]any{"repo": repoName, "links": len(all), "output": filepath.Join(outputDir, "links.jsonl")})
+				fmt.Println(string(b))
+			} else {
+				fmt.Printf("links %s: %d (code %d + adr %d) -> %s\n", repoName, len(all), len(codeLinks), len(adrLinks), filepath.Join(outputDir, "links.jsonl"))
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&repoPath, "repo", "", "repo path")
+	cmd.Flags().StringVar(&outputDir, "output", "", "output dir")
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "json")
+	return cmd
+}
+
+func staleCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "stale [repo-path]",
+		Short: "Report stale links (symbol hash drift or deleted)",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			repo := "."
+			if len(args) > 0 {
+				repo = args[0]
+			}
+			if repoPath != "" {
+				repo = repoPath
+			}
+			abs, _ := filepath.Abs(repo)
+			if r, err := git.GetRepoRoot(abs); err == nil {
+				abs = r
+			}
+			repoName := filepath.Base(abs)
+			if outputDir == "" {
+				outputDir = filepath.Join(os.Getenv("HOME"), "code-storage", "second-brain", "codebase", repoName)
+			}
+			store, _ := storage.NewStore(filepath.Join(outputDir, "symbols.db"))
+			if store != nil {
+				defer store.Close()
+			}
+			stale, err := linker.StaleCheck(context.Background(), outputDir, store, repoName)
+			if err != nil {
+				return err
+			}
+			if jsonOutput {
+				b, _ := json.Marshal(stale)
+				fmt.Println(string(b))
+			} else {
+				if len(stale) == 0 {
+					fmt.Println("no stale links")
+				} else {
+					fmt.Printf("stale %d:\n", len(stale))
+					for _, s := range stale {
+						fmt.Printf("  %s -> %s (%s)\n", s.Symbol, s.TargetPath, s.LinkKind)
+					}
+				}
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&repoPath, "repo", "", "repo")
+	cmd.Flags().StringVar(&outputDir, "output", "", "output dir")
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "json")
+	return cmd
 }
 
 func writeMapMD(outputDir, repoName string, files []string, symCount, edgeCount int) error {
