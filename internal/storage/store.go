@@ -258,6 +258,12 @@ func (s *Store) ListSymbols(ctx context.Context, repo string, limit int) ([]*Sym
 	return out, nil
 }
 
+func (s *Store) CountSymbols(ctx context.Context, repo string) (int, error) {
+	var n int
+	err := s.QueryRowContext(ctx, `SELECT COUNT(*) FROM symbols WHERE repo=?`, repo).Scan(&n)
+	return n, err
+}
+
 func (s *Store) ListEdges(ctx context.Context, repo string) ([]EdgeWithNames, error) {
 	rows, err := s.QueryContext(ctx, `SELECT e.src_symbol_id, e.dst_symbol_id, e.edge_kind, e.confidence, s.qualified_name, t.qualified_name FROM edges e JOIN symbols s ON s.id=e.src_symbol_id JOIN symbols t ON t.id=e.dst_symbol_id WHERE s.repo=? AND t.repo=?`, repo, repo)
 	if err != nil {
