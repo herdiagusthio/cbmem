@@ -47,6 +47,7 @@ func main() {
 	rootCmd.AddCommand(queryCmd())
 	rootCmd.AddCommand(callersCmd())
 	rootCmd.AddCommand(calleesCmd())
+	rootCmd.AddCommand(impactCmd())
 	rootCmd.AddCommand(linksCmd())
 	rootCmd.AddCommand(staleCmd())
 	rootCmd.AddCommand(serveCmd())
@@ -430,6 +431,67 @@ func calleesCmd() *cobra.Command {
 	return cmd
 }
 
+func impactCmd() *cobra.Command {
+	var depth int
+	cmd := &cobra.Command{
+		Use:   "impact <qualifiedName>",
+		Short: "Impact: callers + callees + routes/tests affected",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			qn := args[0]
+			repo := repoPath
+			if repo == "" {
+				repo = "."
+			}
+			abs, _ := filepath.Abs(repo)
+			if r, err := git.GetRepoRoot(abs); err == nil {
+				abs = r
+			}
+			repoName := filepath.Base(abs)
+			if outputDir == "" {
+				outputDir = filepath.Join(os.Getenv("HOME"), "code-storage", "second-brain", "codebase", repoName)
+			}
+			store, err := storage.NewStore(filepath.Join(outputDir, "symbols.db"))
+			if err != nil {
+				return err
+			}
+			defer store.Close()
+			res, err := store.GetImpact(context.Background(), repoName, qn, depth)
+			if err != nil {
+				return err
+			}
+			if jsonOutput {
+				b, _ := json.Marshal(res)
+				fmt.Println(string(b))
+				return nil
+			}
+			fmt.Printf("impact %s (%s %s:%d)\n", res.Symbol.QualifiedName, res.Symbol.SymbolKind, res.Symbol.FilePath, res.Symbol.StartLine)
+			fmt.Printf("  callers: %d (depth %d)\n", len(res.Callers), depth)
+			for _, s := range res.Callers {
+				fmt.Printf("    - %s  %s:%d\n", s.QualifiedName, s.FilePath, s.StartLine)
+			}
+			fmt.Printf("  callees: %d\n", len(res.Callees))
+			for _, s := range res.Callees {
+				fmt.Printf("    - %s  %s:%d\n", s.QualifiedName, s.FilePath, s.StartLine)
+			}
+			fmt.Printf("  routes affected: %d\n", len(res.RoutesAffected))
+			for _, s := range res.RoutesAffected {
+				fmt.Printf("    - %s  %s:%d\n", s.QualifiedName, s.FilePath, s.StartLine)
+			}
+			fmt.Printf("  tests affected: %d\n", len(res.TestsAffected))
+			for _, s := range res.TestsAffected {
+				fmt.Printf("    - %s  %s:%d\n", s.QualifiedName, s.FilePath, s.StartLine)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().IntVar(&depth, "depth", 3, "transitive depth")
+	cmd.Flags().StringVar(&repoPath, "repo", "", "repo path")
+	cmd.Flags().StringVar(&outputDir, "output", "", "output dir")
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "json")
+	return cmd
+}
+
 func versionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
@@ -472,8 +534,10 @@ func linksCmd() *cobra.Command {
 			// ADR links: second-brain root is parent of codebase output
 			sbRoot := filepath.Join(os.Getenv("HOME"), "code-storage", "second-brain")
 			adrLinks, _ := linker.ParseADRLinks(sbRoot)
+			noteLinks, _ := linker.ParseNoteLinks(sbRoot)
 			// filter ADR links to this repo's symbols only (symbol contains repo hint or keep all for now)
 			all := append(codeLinks, adrLinks...)
+			all = append(all, noteLinks...)
 			if err := linker.WriteJSONL(ctx, outputDir, all, store, repoName); err != nil {
 				return err
 			}
@@ -481,7 +545,7 @@ func linksCmd() *cobra.Command {
 				b, _ := json.Marshal(map[string]any{"repo": repoName, "links": len(all), "output": filepath.Join(outputDir, "links.jsonl")})
 				fmt.Println(string(b))
 			} else {
-				fmt.Printf("links %s: %d (code %d + adr %d) -> %s\n", repoName, len(all), len(codeLinks), len(adrLinks), filepath.Join(outputDir, "links.jsonl"))
+				fmt.Printf("links %s: %d (code %d + adr %d + notes %d) -> %s\n", repoName, len(all), len(codeLinks), len(adrLinks), len(noteLinks), filepath.Join(outputDir, "links.jsonl"))
 			}
 			return nil
 		},
