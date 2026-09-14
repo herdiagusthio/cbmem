@@ -1,4 +1,5 @@
-cbmem
-cbmem-linux-amd64
+/cbmem
+/cbmem-linux-amd64
 /tmp/
 *.db
+!pkg/cbmem/
