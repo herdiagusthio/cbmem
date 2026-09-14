@@ -1,0 +1,37 @@
+name: cbmem-index
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md', 'codebase/**']
+  workflow_dispatch:
+
+jobs:
+  index:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.22' }
+      - run: go build -o cbmem .
+      - name: cbmem index (self)
+        run: |
+          ./cbmem init . --json || ./cbmem init .
+          ./cbmem index . --json | tee /tmp/cbmem.json
+          ./cbmem links . || true
+          ./cbmem stale . || true
+          cat /tmp/cbmem.json
+          ls -lh codebase 2>/dev/null || ls -lh ~/code-storage/second-brain/codebase 2>/dev/null || true
+      - name: commit artifacts (if changed)
+        run: |
+          # artifacts live in second-brain/codebase/<repo> when run locally; in CI they are ./codebase or /tmp
+          # This job is a template: fork this workflow to push to your second-brain repo.
+          if git diff --quiet 2>/dev/null; then echo "no changes"; exit 0; fi
+          git config user.name "cbmem-bot"
+          git config user.email "cbmem-bot@users.noreply.github.com"
+          git add -A || true
+          git diff --cached --quiet && exit 0
+          git commit -m "chore(cbmem): auto-index $(date -Iseconds) [skip ci]"
+          git push || echo "push skipped (no token or no remote write)"
