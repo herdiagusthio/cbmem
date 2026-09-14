@@ -176,6 +176,46 @@ func ParseADRLinks(secondBrainRoot string) ([]LinkRecord, error) {
 	return out, nil
 }
 
+func ParseNoteLinks(searchRoot string) ([]LinkRecord, error) {
+	re := regexp.MustCompile(`<!--\s*cbmem:symbol\s*=\s*["']?([A-Za-z0-9_.:\-/$*]+)["']?\s*-->`)
+	var out []LinkRecord
+	err := filepath.WalkDir(searchRoot, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			if d != nil && d.IsDir() {
+				n := d.Name()
+				if n == ".git" || n == "vendor" || n == "node_modules" {
+					return filepath.SkipDir
+				}
+			}
+			return nil
+		}
+		if filepath.Ext(path) != ".md" {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+		rel, _ := filepath.Rel(searchRoot, path)
+		matches := re.FindAllStringSubmatch(string(data), -1)
+		for _, m := range matches {
+			sym := strings.TrimSpace(m[1])
+			if sym == "" || sym == "..." || sym == "…" {
+				continue
+			}
+			tType := "note"
+			if strings.Contains(rel, "decisions") {
+				tType = "decision"
+			} else if strings.Contains(rel, "knowledge") {
+				tType = "knowledge"
+			}
+			out = append(out, LinkRecord{Symbol: sym, FilePath: rel, TargetType: tType, TargetPath: rel, LinkKind: "documents"})
+		}
+		return nil
+	})
+	return out, err
+}
+
 func extractFrontmatter(data []byte) map[string]any {
 	if !bytes.HasPrefix(data, []byte("---")) {
 		return nil

@@ -534,8 +534,10 @@ func linksCmd() *cobra.Command {
 			// ADR links: second-brain root is parent of codebase output
 			sbRoot := filepath.Join(os.Getenv("HOME"), "code-storage", "second-brain")
 			adrLinks, _ := linker.ParseADRLinks(sbRoot)
+			noteLinks, _ := linker.ParseNoteLinks(sbRoot)
 			// filter ADR links to this repo's symbols only (symbol contains repo hint or keep all for now)
 			all := append(codeLinks, adrLinks...)
+			all = append(all, noteLinks...)
 			if err := linker.WriteJSONL(ctx, outputDir, all, store, repoName); err != nil {
 				return err
 			}
@@ -543,7 +545,7 @@ func linksCmd() *cobra.Command {
 				b, _ := json.Marshal(map[string]any{"repo": repoName, "links": len(all), "output": filepath.Join(outputDir, "links.jsonl")})
 				fmt.Println(string(b))
 			} else {
-				fmt.Printf("links %s: %d (code %d + adr %d) -> %s\n", repoName, len(all), len(codeLinks), len(adrLinks), filepath.Join(outputDir, "links.jsonl"))
+				fmt.Printf("links %s: %d (code %d + adr %d + notes %d) -> %s\n", repoName, len(all), len(codeLinks), len(adrLinks), len(noteLinks), filepath.Join(outputDir, "links.jsonl"))
 			}
 			return nil
 		},
